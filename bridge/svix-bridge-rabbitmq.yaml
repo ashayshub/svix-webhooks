@@ -1,0 +1,9 @@
+senders:
+  - name: "send-webhooks-from-${QUEUE_NAME}"
+    input:
+      type: "rabbitmq"
+      uri: "${MQ_URI}"
+      queue_name: "${QUEUE_NAME}"
+    output:
+      type: "svix"
+      token: "${SVIX_TOKEN}"

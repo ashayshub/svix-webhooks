@@ -1,0 +1,74 @@
+name: Bridge Release RabbitMQ
+
+on:
+  release:
+    types: [published]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    name: release x86_64-unknown-linux-gnu
+    runs-on: ubuntu-24.04
+    environment: release
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-24.04
+            extension: ""
+
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            extension: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Compile bridge
+        run: cargo build --release --manifest-path bridge/svix-bridge/Cargo.toml
+
+      - name: Release
+        uses: actions/upload-artifact@v3
+        with:
+          name: svix-bridge-x86_64-unknown-linux-gnu
+          path: bridge/target/release/svix-bridge
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  docker:
+    name: release docker with rabbitmq configuration
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Login Docker
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Derive Version Numbers
+        run: |
+          export REPO="${{ secrets.DOCKERHUB_USERNAME }}/svix-bridge"
+          echo DOCKER_TAGS="$(echo "${{ github.event.release.tag_name }}" | sed -E "s#v([0-9]+)\.([0-9]+)\.([0-9]+)#${REPO}:rabbitmq-latest,${REPO}:rabbitmq-v\1.\2.\3,${REPO}:rabbitmq-v\1.\2,${REPO}:rabbitmq-v\1#")" >> "$GITHUB_ENV"
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./bridge
+          file: ./bridge/Dockerfile.rabbitmq
+          push: true
+          tags: ${{ env.DOCKER_TAGS }}
+          platforms: linux/amd64,linux/arm64
